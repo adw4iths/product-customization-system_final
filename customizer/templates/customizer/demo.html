@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Product Customization Demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  select, input[type=file], button { font-size: 16px; padding: 8px; margin: 6px 0; }
+  #result img { max-width: 100%; border: 1px solid #ddd; border-radius: 8px; margin-top: 16px; }
+  #status { font-family: monospace; color: #555; }
+  label { display: block; margin-top: 16px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Product Customization Demo</h1>
+
+  <label>1. Choose a product view</label>
+  <select id="productImage">
+    {% for product in products %}
+      {% for img in product.images.all %}
+        <option value="{{ img.id }}">{{ product.name }} - {{ img.view }}</option>
+      {% endfor %}
+    {% endfor %}
+  </select>
+
+  <label>2. Upload your design (PNG with transparency works best)</label>
+  <input type="file" id="designFile" accept="image/*">
+
+  <button id="submitBtn">Generate Mockup</button>
+  <p id="status"></p>
+  <div id="result"></div>
+
+<script>
+const submitBtn = document.getElementById('submitBtn');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+
+submitBtn.addEventListener('click', async () => {
+  const fileInput = document.getElementById('designFile');
+  const productImageId = document.getElementById('productImage').value;
+  if (!fileInput.files.length) { alert('Choose a design file first'); return; }
+
+  statusEl.textContent = 'Uploading design...';
+  resultEl.innerHTML = '';
+
+  const form = new FormData();
+  form.append('file', fileInput.files[0]);
+  const uploadRes = await fetch('/api/designs/', { method: 'POST', body: form });
+  const upload = await uploadRes.json();
+
+  statusEl.textContent = 'Queuing render job...';
+  const jobRes = await fetch('/api/customize/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ design_id: upload.id, product_image_id: productImageId }),
+  });
+  const job = await jobRes.json();
+
+  statusEl.textContent = 'Rendering (job ' + job.id + ')...';
+  poll(job.id);
+});
+
+async function poll(jobId) {
+  const res = await fetch('/api/customize/' + jobId + '/');
+  const job = await res.json();
+
+  if (job.status === 'done') {
+    statusEl.textContent = 'Done.';
+    resultEl.innerHTML = '<img src="' + job.result_image + '">';
+  } else if (job.status === 'failed') {
+    statusEl.textContent = 'Failed: ' + job.error_message;
+  } else {
+    statusEl.textContent = 'Status: ' + job.status + '...';
+    setTimeout(() => poll(jobId), 700);
+  }
+}
+</script>
+</body>
+</html>
